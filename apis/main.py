@@ -1,9 +1,9 @@
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
+from typing import List
 
-
-app = FastAPI(title="API clase #2"
-              description="Una API de ejemplo para la clase #2"
+app = FastAPI(title="API clase #2",
+              description="Una API de ejemplo para la clase #2",
               version="1.0.0")
 
 class User(BaseModel):
@@ -97,3 +97,9 @@ def get_user_by_id(user_id: int) -> User:
         404:{"descripcion": "id usuario no se encontro"}
     }
 )
+def delete_user(user_id: int):
+    for index, usuario in enumerate(user_db):
+        if usuario.id == user_id:
+            del user_db[index]
+            return {"descripcion": "usuario eliminado correctamente"}
+    raise HTTPException(status_code=404, detail="Usuario no encontrado")
