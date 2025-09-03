@@ -77,3 +77,49 @@ def eliminar_cliente(cliente_id: int):
         raise HTTPException(status_code=400, detail=str(e))
     
 
+# -------------------------
+# TRANSACCIONES
+# -------------------------
+@app.get(
+    "/transacciones",
+    response_model=List[Transaccion],
+    tags=["Transacciones"],
+    summary="Listar transacciones (filtrable)",
+    description="Query params: `cuenta`, `desde`, `hasta` (YYYY-MM-DD)",
+)
+def listar_transacciones(
+    cuenta: Optional[str] = Query(None, description="Filtrar por número de cuenta (origen o destino)"),
+    desde: Optional[date] = Query(None, description="Fecha mínima (YYYY-MM-DD)"),
+    hasta: Optional[date] = Query(None, description="Fecha máxima (YYYY-MM-DD)"),
+):
+    return svc.listar_transacciones(cuenta=cuenta, desde=desde, hasta=hasta)
+
+
+# ---- CRUD extra para cumplir enunciado ----
+class TransaccionUpdate(BaseModel):
+    nota: constr(min_length=1, max_length=200)
+
+
+@app.get("/transacciones/{tx_id}", response_model=Transaccion, tags=["Transacciones"], summary="Obtener transacción por ID")
+def obtener_tx(tx_id: int):
+    tx = svc.obtener_transaccion(tx_id)
+    if not tx:
+        raise HTTPException(status_code=404, detail="Transacción no encontrada")
+    return tx
+
+
+@app.put("/transacciones/{tx_id}", response_model=Transaccion, tags=["Transacciones"], summary="Actualizar transacción")
+def actualizar_tx(tx_id: int, payload: TransaccionUpdate):
+    try:
+        return svc.actualizar_transaccion(tx_id, payload.nota)
+    except KeyError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
+@app.delete("/transacciones/{tx_id}", tags=["Transacciones"], summary="Eliminar transacción")
+def eliminar_tx(tx_id: int):
+    try:
+        svc.eliminar_transaccion(tx_id)
+        return {"message": "Transacción eliminada"}
+    except KeyError as e:
+        raise HTTPException(status_code=404, detail=str(e))
