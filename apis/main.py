@@ -75,3 +75,5 @@ def eliminar_cliente(cliente_id: int):
         raise HTTPException(status_code=404, detail=str(e))
     except RuntimeError as e:
         raise HTTPException(status_code=400, detail=str(e))
+    
+
