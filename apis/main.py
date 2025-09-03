@@ -122,4 +122,4 @@ def eliminar_tx(tx_id: int):
         svc.eliminar_transaccion(tx_id)
         return {"message": "Transacción eliminada"}
     except KeyError as e:
-        raise HTTPException(status_code=404, detail=str(e))
+        raise HTTPException(status_code=404, detail=str(e)) 
