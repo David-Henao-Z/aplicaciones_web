@@ -175,3 +175,34 @@ def eliminar_tx(tx_id: int):
         return {"message": "Transacción eliminada"}
     except KeyError as e:
         raise HTTPException(status_code=404, detail=str(e)) 
+    
+
+    # ---- Operaciones (negocio) ----
+@app.post("/transacciones/deposito", response_model=Transaccion, status_code=201, tags=["Transacciones"], summary="Depositar")
+def depositar(payload: Deposito):
+    try:
+        return svc.depositar(payload.cuenta, payload.monto)
+    except KeyError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
+@app.post("/transacciones/retiro", response_model=Transaccion, status_code=201, tags=["Transacciones"], summary="Retirar")
+def retirar(payload: Retiro):
+    try:
+        return svc.retirar(payload.cuenta, payload.monto)
+    except KeyError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except RuntimeError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.post("/transacciones/transferencia", response_model=Transaccion, status_code=201, tags=["Transacciones"], summary="Transferir")
+def transferir(payload: Transferencia):
+    try:
+        return svc.transferir(payload.origen, payload.destino, payload.monto)
+    except KeyError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except RuntimeError as e:
+        raise HTTPException(status_code=400, detail=str(e))
