@@ -78,6 +78,58 @@ def eliminar_cliente(cliente_id: int):
     
 
 # -------------------------
+# CUENTAS
+# -------------------------
+@app.get(
+    "/cuentas",
+    response_model=List[Cuenta],
+    tags=["Cuentas"],
+    summary="Listar cuentas (filtrable)",
+    description="Query params: `cliente_id`, `tipo`",
+)
+def listar_cuentas(
+    cliente_id: Optional[int] = Query(None, description="Filtrar por cliente"),
+    tipo: Optional[TipoCuenta] = Query(None, description="Filtrar por tipo de cuenta"),
+):
+    return svc.listar_cuentas(cliente_id=cliente_id, tipo=tipo)
+
+
+@app.get("/cuentas/{numero}", response_model=Cuenta, tags=["Cuentas"], summary="Obtener cuenta por número")
+def obtener_cuenta(numero: str):
+    cta = svc.obtener_cuenta(numero)
+    if not cta:
+        raise HTTPException(status_code=404, detail="Cuenta no encontrada")
+    return cta
+
+
+@app.post("/cuentas", response_model=Cuenta, status_code=201, tags=["Cuentas"], summary="Crear cuenta")
+def crear_cuenta(payload: CuentaCreate):
+    try:
+        return svc.crear_cuenta(payload)
+    except KeyError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
+@app.put("/cuentas/{numero}", response_model=Cuenta, tags=["Cuentas"], summary="Actualizar tipo de cuenta")
+def actualizar_cuenta(numero: str, tipo: TipoCuenta = Query(..., description="Nuevo tipo de cuenta")):
+    try:
+        return svc.actualizar_cuenta_tipo(numero, tipo)
+    except KeyError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
+@app.delete("/cuentas/{numero}", tags=["Cuentas"], summary="Eliminar cuenta")
+def eliminar_cuenta(numero: str):
+    try:
+        svc.eliminar_cuenta(numero)
+        return {"message": "Cuenta eliminada"}
+    except KeyError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except RuntimeError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+# -------------------------
 # TRANSACCIONES
 # -------------------------
 @app.get(
