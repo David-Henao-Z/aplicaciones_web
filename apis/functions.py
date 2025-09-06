@@ -205,3 +205,74 @@ def eliminar_cuenta(numero: str) -> None:
     if cuentas[numero].saldo != 0:
         raise RuntimeError("No se puede eliminar una cuenta con saldo distinto de 0")
     del cuentas[numero]    
+
+# =========================
+# Funciones de negocio: TRANSACCIONES
+# =========================
+def listar_transacciones(
+    cuenta: Optional[str] = None,
+    desde: Optional[date] = None,
+    hasta: Optional[date] = None
+) -> List[Transaccion]:
+    resultado = transacciones
+    if cuenta:
+        resultado = [t for t in resultado if t.cuenta_origen == cuenta or t.cuenta_destino == cuenta]
+    if desde:
+        resultado = [t for t in resultado if t.timestamp.date() >= desde]
+    if hasta:
+        resultado = [t for t in resultado if t.timestamp.date() <= hasta]
+    return resultado
+
+
+def obtener_transaccion(tx_id: int) -> Optional[Transaccion]:
+    return next((t for t in transacciones if t.id == tx_id), None)
+
+
+def actualizar_transaccion(tx_id: int, nota: str) -> Transaccion:
+    tx = obtener_transaccion(tx_id)
+    if not tx:
+        raise KeyError("Transacción no encontrada")
+    tx.nota = nota
+    return tx
+
+
+def eliminar_transaccion(tx_id: int) -> None:
+    idx = next((i for i, t in enumerate(transacciones) if t.id == tx_id), None)
+    if idx is None:
+        raise KeyError("Transacción no encontrada")
+    # Nota: en un sistema real revertirías efectos en saldos.
+    del transacciones[idx]
+
+
+def depositar(cuenta_num: str, monto: float) -> Transaccion:
+    cta = cuentas.get(cuenta_num)
+    if not cta:
+        raise KeyError("Cuenta no encontrada")
+    cta.saldo += float(monto)
+    return _registrar_tx(TransaccionTipo.DEPOSITO, monto, cta_origen=None, cta_destino=cta.numero)
+
+
+def retirar(cuenta_num: str, monto: float) -> Transaccion:
+    cta = cuentas.get(cuenta_num)
+    if not cta:
+        raise KeyError("Cuenta no encontrada")
+    if cta.saldo < monto:
+        raise RuntimeError("Fondos insuficientes")
+    cta.saldo -= float(monto)
+    return _registrar_tx(TransaccionTipo.RETIRO, monto, cta_origen=cta.numero, cta_destino=None)
+
+
+def transferir(origen_num: str, destino_num: str, monto: float) -> Transaccion:
+    origen = cuentas.get(origen_num)
+    destino = cuentas.get(destino_num)
+    if not origen or not destino:
+        raise KeyError("Cuenta origen o destino no encontrada")
+    if origen_num == destino_num:
+        raise ValueError("La cuenta de origen y destino deben ser distintas")
+    if origen.saldo < monto:
+        raise RuntimeError("Fondos insuficientes")
+    origen.saldo -= float(monto)
+    destino.saldo += float(monto)
+    return _registrar_tx(TransaccionTipo.TRANSFERENCIA, monto, cta_origen=origen.numero, cta_destino=destino.numero)
+
+
