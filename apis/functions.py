@@ -121,3 +121,87 @@ def _registrar_tx(
     )
     transacciones.append(tx)
     return tx
+
+# =========================
+# Funciones de negocio: CLIENTES
+# =========================
+def listar_clientes() -> List[Cliente]:
+    return list(clientes.values())
+
+
+def obtener_cliente(cliente_id: int) -> Optional[Cliente]:
+    return clientes.get(cliente_id)
+
+
+def crear_cliente(payload: ClienteCreate) -> Cliente:
+    # Email único
+    if any(c.email == payload.email for c in clientes.values()):
+        raise ValueError("Email ya registrado")
+
+    new_id = 1 if not clientes else max(clientes.keys()) + 1
+    cliente = Cliente(id=new_id, **payload.dict())
+    clientes[new_id] = cliente
+    return cliente
+
+
+def actualizar_cliente(cliente_id: int, payload: ClienteCreate) -> Cliente:
+    if cliente_id not in clientes:
+        raise KeyError("Cliente no encontrado")
+    # Evitar duplicar email en otro cliente
+    if any(c.email == payload.email and c.id != cliente_id for c in clientes.values()):
+        raise ValueError("Email ya registrado por otro cliente")
+
+    cliente = Cliente(id=cliente_id, **payload.dict())
+    clientes[cliente_id] = cliente
+    return cliente
+
+
+def eliminar_cliente(cliente_id: int) -> None:
+    if cliente_id not in clientes:
+        raise KeyError("Cliente no encontrado")
+    # No borrar si tiene cuentas
+    if any(cta.cliente_id == cliente_id for cta in cuentas.values()):
+        raise RuntimeError("Cliente con cuentas activas")
+    del clientes[cliente_id]
+
+
+# =========================
+# Funciones de negocio: CUENTAS
+# =========================
+def listar_cuentas(cliente_id: Optional[int] = None, tipo: Optional[TipoCuenta] = None) -> List[Cuenta]:
+    resultado = list(cuentas.values())
+    if cliente_id is not None:
+        resultado = [c for c in resultado if c.cliente_id == cliente_id]
+    if tipo is not None:
+        resultado = [c for c in resultado if c.tipo == tipo]
+    return resultado
+
+
+def obtener_cuenta(numero: str) -> Optional[Cuenta]:
+    return cuentas.get(numero)
+
+
+def crear_cuenta(payload: CuentaCreate) -> Cuenta:
+    if payload.cliente_id not in clientes:
+        raise KeyError("Cliente no existe")
+    numero = _next_cta_num()
+    cuenta = Cuenta(numero=numero, saldo=0.0, **payload.dict())
+    cuentas[numero] = cuenta
+    return cuenta
+
+
+def actualizar_cuenta_tipo(numero: str, nuevo_tipo: TipoCuenta) -> Cuenta:
+    cta = cuentas.get(numero)
+    if not cta:
+        raise KeyError("Cuenta no encontrada")
+    cta.tipo = nuevo_tipo
+    cuentas[numero] = cta
+    return cta
+
+
+def eliminar_cuenta(numero: str) -> None:
+    if numero not in cuentas:
+        raise KeyError("Cuenta no encontrada")
+    if cuentas[numero].saldo != 0:
+        raise RuntimeError("No se puede eliminar una cuenta con saldo distinto de 0")
+    del cuentas[numero]    
