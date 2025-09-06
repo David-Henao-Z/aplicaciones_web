@@ -205,3 +205,5 @@ def eliminar_cuenta(numero: str) -> None:
     if cuentas[numero].saldo != 0:
         raise RuntimeError("No se puede eliminar una cuenta con saldo distinto de 0")
     del cuentas[numero]    
+
+
