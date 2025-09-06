@@ -78,3 +78,46 @@ class Transferencia(BaseModel):
     origen: str = Field(..., example="ACC0001")
     destino: str = Field(..., example="ACC0002")
     monto: PositiveFloat = Field(..., example=25_000.0)
+
+
+# =========================
+# "Base de datos" en memoria
+# =========================
+clientes: Dict[int, Cliente] = {}
+cuentas: Dict[str, Cuenta] = {}
+transacciones: List[Transaccion] = []
+_seq_tx = 0
+_seq_cta = 0
+
+
+# =========================
+# Utilidades internas
+# =========================
+def _next_tx_id() -> int:
+    """Genera un ID secuencial para transacciones."""
+    global _seq_tx
+    _seq_tx += 1
+    return _seq_tx
+
+
+def _next_cta_num() -> str:
+    """Genera números como ACC0001, ACC0002..."""
+    global _seq_cta
+    _seq_cta += 1
+    return f"ACC{_seq_cta:04d}"
+
+
+def _registrar_tx(
+    tipo: TransaccionTipo, monto: float, cta_origen: Optional[str], cta_destino: Optional[str]
+) -> Transaccion:
+    """Registra la transacción en memoria y retorna el objeto creado."""
+    tx = Transaccion(
+        id=_next_tx_id(),
+        tipo=tipo,
+        cuenta_origen=cta_origen,
+        cuenta_destino=cta_destino,
+        monto=monto,
+        timestamp=datetime.now(),
+    )
+    transacciones.append(tx)
+    return tx
