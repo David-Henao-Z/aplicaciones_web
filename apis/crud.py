@@ -5,22 +5,33 @@
 #    python -m uvicorn crud:app --reload
 # ============================================================================
 
+from contextlib import asynccontextmanager
 from datetime import date
 from typing import List, Optional
 
 from fastapi import FastAPI, HTTPException, Query
-from pydantic import BaseModel, constr
+from pydantic import BaseModel, Field
 
-import functions as svc
-from functions import (
+from uuid import UUID
+from . import functions as svc
+from .functions import (
     Cliente, ClienteCreate, Cuenta, CuentaCreate, Transaccion, TipoCuenta,
-    Deposito, Retiro, Transferencia
+    TipoCuentaModel, Deposito, Retiro, Transferencia
 )
+from .database import close_pool
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup
+    yield
+    # Shutdown
+    await close_pool()
 
 app = FastAPI(
-    title="API Banco - Parcial 1 (modular)",
-    description="Endpoints FastAPI que delegan la lógica a functions.py",
-    version="1.2.0",
+    title="API Banco - PostgreSQL",
+    description="API completa para gestión bancaria con PostgreSQL",
+    version="2.0.0",
+    lifespan=lifespan
 )
 
 
@@ -36,30 +47,30 @@ def root():
 # CLIENTES
 # -------------------------
 @app.get("/clientes", response_model=List[Cliente], tags=["Clientes"], summary="Listar clientes")
-def listar_clientes():
-    return svc.listar_clientes()
+async def listar_clientes():
+    return await svc.listar_clientes()
 
 
 @app.get("/clientes/{cliente_id}", response_model=Cliente, tags=["Clientes"], summary="Obtener cliente por ID")
-def obtener_cliente(cliente_id: int):
-    cliente = svc.obtener_cliente(cliente_id)
+async def obtener_cliente(cliente_id: UUID):
+    cliente = await svc.obtener_cliente(cliente_id)
     if not cliente:
         raise HTTPException(status_code=404, detail="Cliente no encontrado")
     return cliente
 
 
 @app.post("/clientes", response_model=Cliente, status_code=201, tags=["Clientes"], summary="Crear cliente")
-def crear_cliente(payload: ClienteCreate):
+async def crear_cliente(payload: ClienteCreate):
     try:
-        return svc.crear_cliente(payload)
+        return await svc.crear_cliente(payload)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
 
 @app.put("/clientes/{cliente_id}", response_model=Cliente, tags=["Clientes"], summary="Actualizar cliente")
-def actualizar_cliente(cliente_id: int, payload: ClienteCreate):
+async def actualizar_cliente(cliente_id: UUID, payload: ClienteCreate):
     try:
-        return svc.actualizar_cliente(cliente_id, payload)
+        return await svc.actualizar_cliente(cliente_id, payload)
     except KeyError as e:
         raise HTTPException(status_code=404, detail=str(e))
     except ValueError as e:
@@ -67,9 +78,9 @@ def actualizar_cliente(cliente_id: int, payload: ClienteCreate):
 
 
 @app.delete("/clientes/{cliente_id}", tags=["Clientes"], summary="Eliminar cliente")
-def eliminar_cliente(cliente_id: int):
+async def eliminar_cliente(cliente_id: UUID):
     try:
-        svc.eliminar_cliente(cliente_id)
+        await svc.eliminar_cliente(cliente_id)
         return {"message": "Cliente eliminado"}
     except KeyError as e:
         raise HTTPException(status_code=404, detail=str(e))
@@ -87,46 +98,46 @@ def eliminar_cliente(cliente_id: int):
     summary="Listar cuentas (filtrable)",
     description="Query params: `cliente_id`, `tipo`",
 )
-def listar_cuentas(
-    cliente_id: Optional[int] = Query(None, description="Filtrar por cliente"),
-    tipo: Optional[TipoCuenta] = Query(None, description="Filtrar por tipo de cuenta"),
+async def listar_cuentas(
+    cliente_id: Optional[UUID] = Query(None, description="Filtrar por cliente"),
+    tipo: Optional[str] = Query(None, description="Filtrar por tipo de cuenta (AHORROS, CORRIENTE)"),
 ):
-    return svc.listar_cuentas(cliente_id=cliente_id, tipo=tipo)
+    return await svc.listar_cuentas(cliente_id=cliente_id, tipo=tipo)
 
 
-@app.get("/cuentas/{numero}", response_model=Cuenta, tags=["Cuentas"], summary="Obtener cuenta por número")
-def obtener_cuenta(numero: str):
-    cta = svc.obtener_cuenta(numero)
+@app.get("/cuentas/{cuenta_id}", response_model=Cuenta, tags=["Cuentas"], summary="Obtener cuenta por ID")
+async def obtener_cuenta(cuenta_id: UUID):
+    cta = await svc.obtener_cuenta(cuenta_id)
     if not cta:
         raise HTTPException(status_code=404, detail="Cuenta no encontrada")
     return cta
 
 
 @app.post("/cuentas", response_model=Cuenta, status_code=201, tags=["Cuentas"], summary="Crear cuenta")
-def crear_cuenta(payload: CuentaCreate):
+async def crear_cuenta(payload: CuentaCreate):
     try:
-        return svc.crear_cuenta(payload)
+        return await svc.crear_cuenta(payload)
     except KeyError as e:
         raise HTTPException(status_code=404, detail=str(e))
 
 
-@app.put("/cuentas/{numero}", response_model=Cuenta, tags=["Cuentas"], summary="Actualizar tipo de cuenta")
-def actualizar_cuenta(numero: str, tipo: TipoCuenta = Query(..., description="Nuevo tipo de cuenta")):
+@app.delete("/cuentas/{cuenta_id}", tags=["Cuentas"], summary="Eliminar cuenta")
+async def eliminar_cuenta(cuenta_id: UUID):
     try:
-        return svc.actualizar_cuenta_tipo(numero, tipo)
-    except KeyError as e:
-        raise HTTPException(status_code=404, detail=str(e))
-
-
-@app.delete("/cuentas/{numero}", tags=["Cuentas"], summary="Eliminar cuenta")
-def eliminar_cuenta(numero: str):
-    try:
-        svc.eliminar_cuenta(numero)
+        await svc.eliminar_cuenta(cuenta_id)
         return {"message": "Cuenta eliminada"}
     except KeyError as e:
         raise HTTPException(status_code=404, detail=str(e))
     except RuntimeError as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+
+# -------------------------
+# TIPOS DE CUENTA
+# -------------------------
+@app.get("/tipos-cuenta", response_model=List[TipoCuentaModel], tags=["Tipos de Cuenta"], summary="Listar tipos de cuenta")
+async def listar_tipos_cuenta():
+    return await svc.listar_tipos_cuenta()
 
 
 # -------------------------
@@ -137,41 +148,33 @@ def eliminar_cuenta(numero: str):
     response_model=List[Transaccion],
     tags=["Transacciones"],
     summary="Listar transacciones (filtrable)",
-    description="Query params: `cuenta`, `desde`, `hasta` (YYYY-MM-DD)",
+    description="Query params: `cuenta_id`, `desde`, `hasta` (YYYY-MM-DD)",
 )
-def listar_transacciones(
-    cuenta: Optional[str] = Query(None, description="Filtrar por número de cuenta (origen o destino)"),
+async def listar_transacciones(
+    cuenta_id: Optional[UUID] = Query(None, description="Filtrar por ID de cuenta (origen o destino)"),
     desde: Optional[date] = Query(None, description="Fecha mínima (YYYY-MM-DD)"),
     hasta: Optional[date] = Query(None, description="Fecha máxima (YYYY-MM-DD)"),
 ):
-    return svc.listar_transacciones(cuenta=cuenta, desde=desde, hasta=hasta)
+    return await svc.listar_transacciones(cuenta_id=cuenta_id, desde=desde, hasta=hasta)
 
 
 # ---- CRUD extra para cumplir enunciado ----
 class TransaccionUpdate(BaseModel):
-    nota: constr(min_length=1, max_length=200)
+    nota: str = Field(..., min_length=1, max_length=200)
 
 
 @app.get("/transacciones/{tx_id}", response_model=Transaccion, tags=["Transacciones"], summary="Obtener transacción por ID")
-def obtener_tx(tx_id: int):
-    tx = svc.obtener_transaccion(tx_id)
+async def obtener_tx(tx_id: UUID):
+    tx = await svc.obtener_transaccion(tx_id)
     if not tx:
         raise HTTPException(status_code=404, detail="Transacción no encontrada")
     return tx
 
 
-@app.put("/transacciones/{tx_id}", response_model=Transaccion, tags=["Transacciones"], summary="Actualizar transacción")
-def actualizar_tx(tx_id: int, payload: TransaccionUpdate):
-    try:
-        return svc.actualizar_transaccion(tx_id, payload.nota)
-    except KeyError as e:
-        raise HTTPException(status_code=404, detail=str(e))
-
-
 @app.delete("/transacciones/{tx_id}", tags=["Transacciones"], summary="Eliminar transacción")
-def eliminar_tx(tx_id: int):
+async def eliminar_tx(tx_id: UUID):
     try:
-        svc.eliminar_transaccion(tx_id)
+        await svc.eliminar_transaccion(tx_id)
         return {"message": "Transacción eliminada"}
     except KeyError as e:
         raise HTTPException(status_code=404, detail=str(e)) 
@@ -179,17 +182,17 @@ def eliminar_tx(tx_id: int):
 
     # ---- Operaciones (negocio) ----
 @app.post("/transacciones/deposito", response_model=Transaccion, status_code=201, tags=["Transacciones"], summary="Depositar")
-def depositar(payload: Deposito):
+async def depositar(payload: Deposito):
     try:
-        return svc.depositar(payload.cuenta, payload.monto)
+        return await svc.depositar(payload.id_cuenta, payload.monto)
     except KeyError as e:
         raise HTTPException(status_code=404, detail=str(e))
 
 
 @app.post("/transacciones/retiro", response_model=Transaccion, status_code=201, tags=["Transacciones"], summary="Retirar")
-def retirar(payload: Retiro):
+async def retirar(payload: Retiro):
     try:
-        return svc.retirar(payload.cuenta, payload.monto)
+        return await svc.retirar(payload.id_cuenta, payload.monto)
     except KeyError as e:
         raise HTTPException(status_code=404, detail=str(e))
     except RuntimeError as e:
@@ -197,9 +200,9 @@ def retirar(payload: Retiro):
 
 
 @app.post("/transacciones/transferencia", response_model=Transaccion, status_code=201, tags=["Transacciones"], summary="Transferir")
-def transferir(payload: Transferencia):
+async def transferir(payload: Transferencia):
     try:
-        return svc.transferir(payload.origen, payload.destino, payload.monto)
+        return await svc.transferir(payload.id_cuenta_origen, payload.id_cuenta_destino, payload.monto)
     except KeyError as e:
         raise HTTPException(status_code=404, detail=str(e))
     except ValueError as e:

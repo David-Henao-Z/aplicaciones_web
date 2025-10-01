@@ -1,19 +1,20 @@
 # functions.py
 # ============================================================================
-# Módulo de **funciones y modelos** para la API del Banco.
+# Módulo de **funciones y modelos** para la API del Banco con PostgreSQL.
 # Contiene:
-# - Modelos Pydantic (Cliente, Cuenta, Transaccion, etc.)
-# - "Base de datos" en memoria
+# - Modelos Pydantic actualizados para usar UUIDs
+# - Funciones para interactuar con PostgreSQL
 # - Lógica/reglas de negocio (crear/actualizar/eliminar, depositar, retirar, transferir)
-# - CRUD de transacciones (obtener/actualizar/eliminar)
 # ============================================================================
 
 from __future__ import annotations
 from datetime import datetime, date
 from enum import Enum
 from typing import Dict, List, Optional
+from uuid import UUID, uuid4
 
-from pydantic import BaseModel, Field, EmailStr, conint, constr, PositiveFloat
+from pydantic import BaseModel, Field, EmailStr, constr, PositiveFloat
+from .database import get_db
 
 
 # =========================
@@ -22,30 +23,40 @@ from pydantic import BaseModel, Field, EmailStr, conint, constr, PositiveFloat
 class TipoCuenta(str, Enum):
     AHORROS = "AHORROS"
     CORRIENTE = "CORRIENTE"
-    CREDITO = "CREDITO"
 
 
 class Cliente(BaseModel):
-    id: conint(gt=0) = Field(..., example=1)
-    nombre: constr(min_length=2) = Field(..., example="David Jiménez")
-    email: EmailStr = Field(..., example="david@example.com")
+    id: UUID = Field(..., example="123e4567-e89b-12d3-a456-426614174000")
+    nombre_completo: str = Field(..., min_length=2, example="David Jiménez")
+    documento: str = Field(..., example="12345678")
+    fecha_creacion: datetime = Field(default_factory=datetime.now)
+    fecha_edicion: Optional[datetime] = None
 
 
 class ClienteCreate(BaseModel):
-    nombre: constr(min_length=2) = Field(..., example="David Jiménez")
-    email: EmailStr = Field(..., example="david@example.com")
+    nombre_completo: str = Field(..., min_length=2, example="David Jiménez") 
+    documento: str = Field(..., example="12345678")
+
+
+class TipoCuentaModel(BaseModel):
+    id: UUID = Field(..., example="123e4567-e89b-12d3-a456-426614174000")
+    nombre: str = Field(..., example="AHORROS")
+    descripcion: Optional[str] = Field(None, example="Cuenta de ahorros")
 
 
 class Cuenta(BaseModel):
-    numero: constr(min_length=6, max_length=20) = Field(..., example="ACC0001")
-    cliente_id: conint(gt=0) = Field(..., example=1)
-    tipo: TipoCuenta = Field(..., example="AHORROS")
+    id: UUID = Field(..., example="123e4567-e89b-12d3-a456-426614174000")
+    numero: str = Field(..., example="ACC0001")
+    id_cliente: UUID = Field(..., example="123e4567-e89b-12d3-a456-426614174000")
+    id_tipo_cuenta: UUID = Field(..., example="123e4567-e89b-12d3-a456-426614174000")
     saldo: float = Field(0.0, ge=0, example=0.0)
+    fecha_creacion: datetime = Field(default_factory=datetime.now)
+    fecha_edicion: Optional[datetime] = None
 
 
 class CuentaCreate(BaseModel):
-    cliente_id: conint(gt=0)
-    tipo: TipoCuenta
+    id_cliente: UUID = Field(..., example="123e4567-e89b-12d3-a456-426614174000")
+    id_tipo_cuenta: UUID = Field(..., example="123e4567-e89b-12d3-a456-426614174000")
 
 
 class TransaccionTipo(str, Enum):
@@ -55,224 +66,427 @@ class TransaccionTipo(str, Enum):
 
 
 class Transaccion(BaseModel):
-    id: int
+    id: UUID = Field(..., example="123e4567-e89b-12d3-a456-426614174000")
     tipo: TransaccionTipo
-    cuenta_origen: Optional[str] = Field(None, example="ACC0001")
-    cuenta_destino: Optional[str] = Field(None, example="ACC0002")
+    id_cuenta_origen: Optional[UUID] = Field(None, example="123e4567-e89b-12d3-a456-426614174000")
+    id_cuenta_destino: Optional[UUID] = Field(None, example="123e4567-e89b-12d3-a456-426614174000")
     monto: PositiveFloat
-    timestamp: datetime
-    nota: Optional[str] = None  # Campo editable para el PUT
+    momento: datetime = Field(default_factory=datetime.now)
+    fecha_creacion: datetime = Field(default_factory=datetime.now)
+    fecha_edicion: Optional[datetime] = None
 
 
 class Deposito(BaseModel):
-    cuenta: str = Field(..., example="ACC0001")
-    monto: PositiveFloat = Field(..., example=100_000.0)
+    id_cuenta: UUID = Field(..., example="123e4567-e89b-12d3-a456-426614174000")
+    monto: PositiveFloat = Field(..., example=100000.0)
 
 
 class Retiro(BaseModel):
-    cuenta: str = Field(..., example="ACC0001")
-    monto: PositiveFloat = Field(..., example=50_000.0)
+    id_cuenta: UUID = Field(..., example="123e4567-e89b-12d3-a456-426614174000")
+    monto: PositiveFloat = Field(..., example=50000.0)
 
 
 class Transferencia(BaseModel):
-    origen: str = Field(..., example="ACC0001")
-    destino: str = Field(..., example="ACC0002")
-    monto: PositiveFloat = Field(..., example=25_000.0)
-
-
-# =========================
-# "Base de datos" en memoria
-# =========================
-clientes: Dict[int, Cliente] = {}
-cuentas: Dict[str, Cuenta] = {}
-transacciones: List[Transaccion] = []
-_seq_tx = 0
-_seq_cta = 0
+    id_cuenta_origen: UUID = Field(..., example="123e4567-e89b-12d3-a456-426614174000")
+    id_cuenta_destino: UUID = Field(..., example="123e4567-e89b-12d3-a456-426614174000")
+    monto: PositiveFloat = Field(..., example=25000.0)
 
 
 # =========================
 # Utilidades internas
 # =========================
-def _next_tx_id() -> int:
-    """Genera un ID secuencial para transacciones."""
-    global _seq_tx
-    _seq_tx += 1
-    return _seq_tx
-
-
-def _next_cta_num() -> str:
-    """Genera números como ACC0001, ACC0002..."""
-    global _seq_cta
-    _seq_cta += 1
-    return f"ACC{_seq_cta:04d}"
-
-
-def _registrar_tx(
-    tipo: TransaccionTipo, monto: float, cta_origen: Optional[str], cta_destino: Optional[str]
-) -> Transaccion:
-    """Registra la transacción en memoria y retorna el objeto creado."""
-    tx = Transaccion(
-        id=_next_tx_id(),
-        tipo=tipo,
-        cuenta_origen=cta_origen,
-        cuenta_destino=cta_destino,
-        monto=monto,
-        timestamp=datetime.now(),
-    )
-    transacciones.append(tx)
-    return tx
+def _generar_numero_cuenta() -> str:
+    """Genera números de cuenta únicos"""
+    import random
+    import string
+    return "ACC" + "".join(random.choices(string.digits, k=7))
 
 # =========================
 # Funciones de negocio: CLIENTES
 # =========================
-def listar_clientes() -> List[Cliente]:
-    return list(clientes.values())
+async def listar_clientes() -> List[Cliente]:
+    async with get_db() as conn:
+        rows = await conn.fetch("""
+            SELECT id_cliente as id, nombre_completo, documento, fecha_creacion, fecha_edicion
+            FROM banco.cliente
+            ORDER BY fecha_creacion DESC
+        """)
+        return [Cliente(**dict(row)) for row in rows]
 
 
-def obtener_cliente(cliente_id: int) -> Optional[Cliente]:
-    return clientes.get(cliente_id)
+async def obtener_cliente(cliente_id: UUID) -> Optional[Cliente]:
+    async with get_db() as conn:
+        row = await conn.fetchrow("""
+            SELECT id_cliente as id, nombre_completo, documento, fecha_creacion, fecha_edicion
+            FROM banco.cliente
+            WHERE id_cliente = $1
+        """, cliente_id)
+        return Cliente(**dict(row)) if row else None
 
 
-def crear_cliente(payload: ClienteCreate) -> Cliente:
-    # Email único
-    if any(c.email == payload.email for c in clientes.values()):
-        raise ValueError("Email ya registrado")
+async def crear_cliente(payload: ClienteCreate) -> Cliente:
+    async with get_db() as conn:
+        # Verificar documento único
+        exists = await conn.fetchval("""
+            SELECT EXISTS(SELECT 1 FROM banco.cliente WHERE documento = $1)
+        """, payload.documento)
+        
+        if exists:
+            raise ValueError("Documento ya registrado")
 
-    new_id = 1 if not clientes else max(clientes.keys()) + 1
-    cliente = Cliente(id=new_id, **payload.dict())
-    clientes[new_id] = cliente
-    return cliente
-
-
-def actualizar_cliente(cliente_id: int, payload: ClienteCreate) -> Cliente:
-    if cliente_id not in clientes:
-        raise KeyError("Cliente no encontrado")
-    # Evitar duplicar email en otro cliente
-    if any(c.email == payload.email and c.id != cliente_id for c in clientes.values()):
-        raise ValueError("Email ya registrado por otro cliente")
-
-    cliente = Cliente(id=cliente_id, **payload.dict())
-    clientes[cliente_id] = cliente
-    return cliente
+        row = await conn.fetchrow("""
+            INSERT INTO banco.cliente (nombre_completo, documento)
+            VALUES ($1, $2)
+            RETURNING id_cliente as id, nombre_completo, documento, fecha_creacion, fecha_edicion
+        """, payload.nombre_completo, payload.documento)
+        
+        return Cliente(**dict(row))
 
 
-def eliminar_cliente(cliente_id: int) -> None:
-    if cliente_id not in clientes:
-        raise KeyError("Cliente no encontrado")
-    # No borrar si tiene cuentas
-    if any(cta.cliente_id == cliente_id for cta in cuentas.values()):
-        raise RuntimeError("Cliente con cuentas activas")
-    del clientes[cliente_id]
+async def actualizar_cliente(cliente_id: UUID, payload: ClienteCreate) -> Cliente:
+    async with get_db() as conn:
+        # Verificar que existe
+        exists = await conn.fetchval("""
+            SELECT EXISTS(SELECT 1 FROM banco.cliente WHERE id_cliente = $1)
+        """, cliente_id)
+        
+        if not exists:
+            raise KeyError("Cliente no encontrado")
+        
+        # Verificar documento único (excepto el mismo cliente)
+        doc_exists = await conn.fetchval("""
+            SELECT EXISTS(SELECT 1 FROM banco.cliente WHERE documento = $1 AND id_cliente != $2)
+        """, payload.documento, cliente_id)
+        
+        if doc_exists:
+            raise ValueError("Documento ya registrado por otro cliente")
+
+        row = await conn.fetchrow("""
+            UPDATE banco.cliente 
+            SET nombre_completo = $2, documento = $3, fecha_edicion = NOW()
+            WHERE id_cliente = $1
+            RETURNING id_cliente as id, nombre_completo, documento, fecha_creacion, fecha_edicion
+        """, cliente_id, payload.nombre_completo, payload.documento)
+        
+        return Cliente(**dict(row))
+
+
+async def eliminar_cliente(cliente_id: UUID) -> None:
+    async with get_db() as conn:
+        # Verificar que existe
+        exists = await conn.fetchval("""
+            SELECT EXISTS(SELECT 1 FROM banco.cliente WHERE id_cliente = $1)
+        """, cliente_id)
+        
+        if not exists:
+            raise KeyError("Cliente no encontrado")
+        
+        # Verificar que no tiene cuentas
+        has_accounts = await conn.fetchval("""
+            SELECT EXISTS(SELECT 1 FROM banco.cuenta WHERE id_cliente = $1)
+        """, cliente_id)
+        
+        if has_accounts:
+            raise RuntimeError("Cliente con cuentas activas")
+
+        await conn.execute("""
+            DELETE FROM banco.cliente WHERE id_cliente = $1
+        """, cliente_id)
 
 
 # =========================
 # Funciones de negocio: CUENTAS
 # =========================
-def listar_cuentas(cliente_id: Optional[int] = None, tipo: Optional[TipoCuenta] = None) -> List[Cuenta]:
-    resultado = list(cuentas.values())
-    if cliente_id is not None:
-        resultado = [c for c in resultado if c.cliente_id == cliente_id]
-    if tipo is not None:
-        resultado = [c for c in resultado if c.tipo == tipo]
-    return resultado
+async def listar_cuentas(cliente_id: Optional[UUID] = None, tipo: Optional[str] = None) -> List[Cuenta]:
+    async with get_db() as conn:
+        where_conditions = []
+        params = []
+        param_count = 0
+        
+        if cliente_id is not None:
+            param_count += 1
+            where_conditions.append(f"c.id_cliente = ${param_count}")
+            params.append(cliente_id)
+        
+        if tipo is not None:
+            param_count += 1
+            where_conditions.append(f"tc.nombre = ${param_count}")
+            params.append(tipo)
+        
+        where_clause = "WHERE " + " AND ".join(where_conditions) if where_conditions else ""
+        
+        query = f"""
+            SELECT c.id_cuenta as id, c.numero, c.id_cliente, c.id_tipo_cuenta, 
+                   c.saldo, c.fecha_creacion, c.fecha_edicion
+            FROM banco.cuenta c
+            JOIN banco.tipo_cuenta tc ON c.id_tipo_cuenta = tc.id_tipo_cuenta
+            {where_clause}
+            ORDER BY c.fecha_creacion DESC
+        """
+        
+        rows = await conn.fetch(query, *params)
+        return [Cuenta(**dict(row)) for row in rows]
 
 
-def obtener_cuenta(numero: str) -> Optional[Cuenta]:
-    return cuentas.get(numero)
+async def obtener_cuenta(cuenta_id: UUID) -> Optional[Cuenta]:
+    async with get_db() as conn:
+        row = await conn.fetchrow("""
+            SELECT id_cuenta as id, numero, id_cliente, id_tipo_cuenta, 
+                   saldo, fecha_creacion, fecha_edicion
+            FROM banco.cuenta
+            WHERE id_cuenta = $1
+        """, cuenta_id)
+        return Cuenta(**dict(row)) if row else None
 
 
-def crear_cuenta(payload: CuentaCreate) -> Cuenta:
-    if payload.cliente_id not in clientes:
-        raise KeyError("Cliente no existe")
-    numero = _next_cta_num()
-    cuenta = Cuenta(numero=numero, saldo=0.0, **payload.dict())
-    cuentas[numero] = cuenta
-    return cuenta
+async def obtener_cuenta_por_numero(numero: str) -> Optional[Cuenta]:
+    async with get_db() as conn:
+        row = await conn.fetchrow("""
+            SELECT id_cuenta as id, numero, id_cliente, id_tipo_cuenta, 
+                   saldo, fecha_creacion, fecha_edicion
+            FROM banco.cuenta
+            WHERE numero = $1
+        """, numero)
+        return Cuenta(**dict(row)) if row else None
 
 
-def actualizar_cuenta_tipo(numero: str, nuevo_tipo: TipoCuenta) -> Cuenta:
-    cta = cuentas.get(numero)
-    if not cta:
-        raise KeyError("Cuenta no encontrada")
-    cta.tipo = nuevo_tipo
-    cuentas[numero] = cta
-    return cta
+async def crear_cuenta(payload: CuentaCreate) -> Cuenta:
+    async with get_db() as conn:
+        # Verificar que cliente existe
+        cliente_exists = await conn.fetchval("""
+            SELECT EXISTS(SELECT 1 FROM banco.cliente WHERE id_cliente = $1)
+        """, payload.id_cliente)
+        
+        if not cliente_exists:
+            raise KeyError("Cliente no existe")
+        
+        # Verificar que tipo cuenta existe
+        tipo_exists = await conn.fetchval("""
+            SELECT EXISTS(SELECT 1 FROM banco.tipo_cuenta WHERE id_tipo_cuenta = $1)
+        """, payload.id_tipo_cuenta)
+        
+        if not tipo_exists:
+            raise KeyError("Tipo de cuenta no existe")
+        
+        numero = _generar_numero_cuenta()
+        
+        row = await conn.fetchrow("""
+            INSERT INTO banco.cuenta (numero, id_cliente, id_tipo_cuenta, saldo)
+            VALUES ($1, $2, $3, 0.0)
+            RETURNING id_cuenta as id, numero, id_cliente, id_tipo_cuenta, 
+                      saldo, fecha_creacion, fecha_edicion
+        """, numero, payload.id_cliente, payload.id_tipo_cuenta)
+        
+        return Cuenta(**dict(row))
 
 
-def eliminar_cuenta(numero: str) -> None:
-    if numero not in cuentas:
-        raise KeyError("Cuenta no encontrada")
-    if cuentas[numero].saldo != 0:
-        raise RuntimeError("No se puede eliminar una cuenta con saldo distinto de 0")
-    del cuentas[numero]    
+async def eliminar_cuenta(cuenta_id: UUID) -> None:
+    async with get_db() as conn:
+        # Verificar que existe
+        row = await conn.fetchrow("""
+            SELECT saldo FROM banco.cuenta WHERE id_cuenta = $1
+        """, cuenta_id)
+        
+        if not row:
+            raise KeyError("Cuenta no encontrada")
+        
+        if row['saldo'] != 0:
+            raise RuntimeError("No se puede eliminar una cuenta con saldo distinto de 0")
+
+        await conn.execute("""
+            DELETE FROM banco.cuenta WHERE id_cuenta = $1
+        """, cuenta_id)    
 
 # =========================
 # Funciones de negocio: TRANSACCIONES
 # =========================
-def listar_transacciones(
-    cuenta: Optional[str] = None,
+async def listar_transacciones(
+    cuenta_id: Optional[UUID] = None,
     desde: Optional[date] = None,
     hasta: Optional[date] = None
 ) -> List[Transaccion]:
-    resultado = transacciones
-    if cuenta:
-        resultado = [t for t in resultado if t.cuenta_origen == cuenta or t.cuenta_destino == cuenta]
-    if desde:
-        resultado = [t for t in resultado if t.timestamp.date() >= desde]
-    if hasta:
-        resultado = [t for t in resultado if t.timestamp.date() <= hasta]
-    return resultado
+    async with get_db() as conn:
+        where_conditions = []
+        params = []
+        param_count = 0
+        
+        if cuenta_id is not None:
+            param_count += 1
+            where_conditions.append(f"(id_cuenta_origen = ${param_count} OR id_cuenta_destino = ${param_count})")
+            params.append(cuenta_id)
+        
+        if desde is not None:
+            param_count += 1
+            where_conditions.append(f"momento::date >= ${param_count}")
+            params.append(desde)
+        
+        if hasta is not None:
+            param_count += 1
+            where_conditions.append(f"momento::date <= ${param_count}")
+            params.append(hasta)
+        
+        where_clause = "WHERE " + " AND ".join(where_conditions) if where_conditions else ""
+        
+        query = f"""
+            SELECT id_transaccion as id, tipo, id_cuenta_origen, id_cuenta_destino,
+                   monto, momento, fecha_creacion, fecha_edicion
+            FROM banco.transaccion
+            {where_clause}
+            ORDER BY momento DESC
+        """
+        
+        rows = await conn.fetch(query, *params)
+        return [Transaccion(**dict(row)) for row in rows]
 
 
-def obtener_transaccion(tx_id: int) -> Optional[Transaccion]:
-    return next((t for t in transacciones if t.id == tx_id), None)
+async def obtener_transaccion(tx_id: UUID) -> Optional[Transaccion]:
+    async with get_db() as conn:
+        row = await conn.fetchrow("""
+            SELECT id_transaccion as id, tipo, id_cuenta_origen, id_cuenta_destino,
+                   monto, momento, fecha_creacion, fecha_edicion
+            FROM banco.transaccion
+            WHERE id_transaccion = $1
+        """, tx_id)
+        return Transaccion(**dict(row)) if row else None
 
 
-def actualizar_transaccion(tx_id: int, nota: str) -> Transaccion:
-    tx = obtener_transaccion(tx_id)
-    if not tx:
-        raise KeyError("Transacción no encontrada")
-    tx.nota = nota
-    return tx
+async def eliminar_transaccion(tx_id: UUID) -> None:
+    async with get_db() as conn:
+        # Verificar que existe
+        exists = await conn.fetchval("""
+            SELECT EXISTS(SELECT 1 FROM banco.transaccion WHERE id_transaccion = $1)
+        """, tx_id)
+        
+        if not exists:
+            raise KeyError("Transacción no encontrada")
+
+        await conn.execute("""
+            DELETE FROM banco.transaccion WHERE id_transaccion = $1
+        """, tx_id)
 
 
-def eliminar_transaccion(tx_id: int) -> None:
-    idx = next((i for i, t in enumerate(transacciones) if t.id == tx_id), None)
-    if idx is None:
-        raise KeyError("Transacción no encontrada")
-    # Nota: en un sistema real revertirías efectos en saldos.
-    del transacciones[idx]
+async def depositar(cuenta_id: UUID, monto: float) -> Transaccion:
+    async with get_db() as conn:
+        # Verificar que cuenta existe
+        cuenta_exists = await conn.fetchval("""
+            SELECT EXISTS(SELECT 1 FROM banco.cuenta WHERE id_cuenta = $1)
+        """, cuenta_id)
+        
+        if not cuenta_exists:
+            raise KeyError("Cuenta no encontrada")
+        
+        # Actualizar saldo
+        await conn.execute("""
+            UPDATE banco.cuenta SET saldo = saldo + $2 WHERE id_cuenta = $1
+        """, cuenta_id, monto)
+        
+        # Registrar transacción
+        row = await conn.fetchrow("""
+            INSERT INTO banco.transaccion (tipo, id_cuenta_destino, monto)
+            VALUES ($1, $2, $3)
+            RETURNING id_transaccion as id, tipo, id_cuenta_origen, id_cuenta_destino,
+                      monto, momento, fecha_creacion, fecha_edicion
+        """, TransaccionTipo.DEPOSITO.value, cuenta_id, monto)
+        
+        return Transaccion(**dict(row))
 
 
-def depositar(cuenta_num: str, monto: float) -> Transaccion:
-    cta = cuentas.get(cuenta_num)
-    if not cta:
-        raise KeyError("Cuenta no encontrada")
-    cta.saldo += float(monto)
-    return _registrar_tx(TransaccionTipo.DEPOSITO, monto, cta_origen=None, cta_destino=cta.numero)
+async def retirar(cuenta_id: UUID, monto: float) -> Transaccion:
+    async with get_db() as conn:
+        # Verificar saldo suficiente
+        saldo_actual = await conn.fetchval("""
+            SELECT saldo FROM banco.cuenta WHERE id_cuenta = $1
+        """, cuenta_id)
+        
+        if saldo_actual is None:
+            raise KeyError("Cuenta no encontrada")
+        
+        if saldo_actual < monto:
+            raise RuntimeError("Fondos insuficientes")
+        
+        # Actualizar saldo
+        await conn.execute("""
+            UPDATE banco.cuenta SET saldo = saldo - $2 WHERE id_cuenta = $1
+        """, cuenta_id, monto)
+        
+        # Registrar transacción
+        row = await conn.fetchrow("""
+            INSERT INTO banco.transaccion (tipo, id_cuenta_origen, monto)
+            VALUES ($1, $2, $3)
+            RETURNING id_transaccion as id, tipo, id_cuenta_origen, id_cuenta_destino,
+                      monto, momento, fecha_creacion, fecha_edicion
+        """, TransaccionTipo.RETIRO.value, cuenta_id, monto)
+        
+        return Transaccion(**dict(row))
 
 
-def retirar(cuenta_num: str, monto: float) -> Transaccion:
-    cta = cuentas.get(cuenta_num)
-    if not cta:
-        raise KeyError("Cuenta no encontrada")
-    if cta.saldo < monto:
-        raise RuntimeError("Fondos insuficientes")
-    cta.saldo -= float(monto)
-    return _registrar_tx(TransaccionTipo.RETIRO, monto, cta_origen=cta.numero, cta_destino=None)
+async def transferir(cuenta_origen_id: UUID, cuenta_destino_id: UUID, monto: float) -> Transaccion:
+    async with get_db() as conn:
+        if cuenta_origen_id == cuenta_destino_id:
+            raise ValueError("La cuenta de origen y destino deben ser distintas")
+        
+        # Verificar saldo suficiente en cuenta origen
+        saldo_origen = await conn.fetchval("""
+            SELECT saldo FROM banco.cuenta WHERE id_cuenta = $1
+        """, cuenta_origen_id)
+        
+        if saldo_origen is None:
+            raise KeyError("Cuenta origen no encontrada")
+        
+        # Verificar que cuenta destino existe
+        destino_exists = await conn.fetchval("""
+            SELECT EXISTS(SELECT 1 FROM banco.cuenta WHERE id_cuenta = $1)
+        """, cuenta_destino_id)
+        
+        if not destino_exists:
+            raise KeyError("Cuenta destino no encontrada")
+        
+        if saldo_origen < monto:
+            raise RuntimeError("Fondos insuficientes")
+        
+        # Realizar transferencia (transacción)
+        async with conn.transaction():
+            # Debitar cuenta origen
+            await conn.execute("""
+                UPDATE banco.cuenta SET saldo = saldo - $2 WHERE id_cuenta = $1
+            """, cuenta_origen_id, monto)
+            
+            # Acreditar cuenta destino
+            await conn.execute("""
+                UPDATE banco.cuenta SET saldo = saldo + $2 WHERE id_cuenta = $1
+            """, cuenta_destino_id, monto)
+            
+            # Registrar transacción
+            row = await conn.fetchrow("""
+                INSERT INTO banco.transaccion (tipo, id_cuenta_origen, id_cuenta_destino, monto)
+                VALUES ($1, $2, $3, $4)
+                RETURNING id_transaccion as id, tipo, id_cuenta_origen, id_cuenta_destino,
+                          monto, momento, fecha_creacion, fecha_edicion
+            """, TransaccionTipo.TRANSFERENCIA.value, cuenta_origen_id, cuenta_destino_id, monto)
+        
+        return Transaccion(**dict(row))
 
 
-def transferir(origen_num: str, destino_num: str, monto: float) -> Transaccion:
-    origen = cuentas.get(origen_num)
-    destino = cuentas.get(destino_num)
-    if not origen or not destino:
-        raise KeyError("Cuenta origen o destino no encontrada")
-    if origen_num == destino_num:
-        raise ValueError("La cuenta de origen y destino deben ser distintas")
-    if origen.saldo < monto:
-        raise RuntimeError("Fondos insuficientes")
-    origen.saldo -= float(monto)
-    destino.saldo += float(monto)
-    return _registrar_tx(TransaccionTipo.TRANSFERENCIA, monto, cta_origen=origen.numero, cta_destino=destino.numero)
+# =========================
+# Funciones auxiliares para tipos de cuenta
+# =========================
+async def listar_tipos_cuenta() -> List[TipoCuentaModel]:
+    async with get_db() as conn:
+        rows = await conn.fetch("""
+            SELECT id_tipo_cuenta as id, nombre, descripcion
+            FROM banco.tipo_cuenta
+            ORDER BY nombre
+        """)
+        return [TipoCuentaModel(**dict(row)) for row in rows]
+
+
+async def obtener_tipo_cuenta_por_nombre(nombre: str) -> Optional[TipoCuentaModel]:
+    async with get_db() as conn:
+        row = await conn.fetchrow("""
+            SELECT id_tipo_cuenta as id, nombre, descripcion
+            FROM banco.tipo_cuenta
+            WHERE nombre = $1
+        """, nombre)
+        return TipoCuentaModel(**dict(row)) if row else None
 
 
