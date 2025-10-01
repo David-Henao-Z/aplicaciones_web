@@ -175,7 +175,7 @@ curl "http://127.0.0.1:8000/transacciones?cuenta=ACC0001"
 ## Autores / Integrantes
 
 - **HOLOMAN582** — Estudiante / Desarrollador
-- **Integrante 2** — Rol
+- **David Henao Zea** — Estudiante / Desarrollador
 - **Integrante 3** — Rol
 
 > Reemplaza los nombres/roles según tu equipo.
