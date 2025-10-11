@@ -6,7 +6,7 @@
 # ============================================================================
 from fastapi import Depends
 from fastapi.security import OAuth2PasswordRequestForm
-from auth import (
+from aplicaciones_web.apis.auth import (
     authenticate_user,
     create_access_token,
     ACCESS_TOKEN_EXPIRE_MINUTES,
@@ -25,8 +25,8 @@ from fastapi import FastAPI, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from uuid import UUID
-import functions as svc
-from functions import (
+import aplicaciones_web.apis.functions as svc
+from aplicaciones_web.apis.functions import (
     Cliente,
     ClienteCreate,
     Cuenta,
@@ -38,14 +38,16 @@ from functions import (
     Retiro,
     Transferencia,
 )
-from database import close_pool
+from aplicaciones_web.apis.database import close_pool
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup
+    # Contexto de vida de la aplicación: se puede usar para inicializar
+    # recursos en startup y limpiarlos en shutdown. Aquí solo cerramos el pool
+    # de conexiones a la base de datos cuando la aplicación termina.
     yield
-    # Shutdown
+    # Al apagar la app, cerrar el pool de conexiones si existe
     await close_pool()
 
 
@@ -362,3 +364,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Registrar el middleware de auditoría (logger ligero de peticiones).
+# Este middleware escribirá una línea por cada petición en `audit.log`.
+from aplicaciones_web.apis.audit import audit_middleware
+
+app.middleware("http")(audit_middleware)

@@ -21,17 +21,20 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 
 class Token(BaseModel):
     """Estructura del token JWT retornado."""
+
     access_token: str
     token_type: str
 
 
 class TokenData(BaseModel):
     """Datos decodificados desde el token JWT."""
+
     username: str | None = None
 
 
 class User(BaseModel):
     """Usuario base del sistema."""
+
     username: str
     full_name: str | None = None
     disabled: bool | None = None
@@ -39,6 +42,7 @@ class User(BaseModel):
 
 class UserInDB(User):
     """Usuario almacenado en la base de datos."""
+
     hashed_password: str
 
 
@@ -47,7 +51,7 @@ fake_users_db = {
     "admin@banco.com": {
         "username": "admin@banco.com",
         "full_name": "Administrador Banco",
-        "hashed_password": "$2b$12$EixZaYVK1fsbw1ZfbX3OXePaWxn96p36WQoeG6Lruj3vjPVeZ6HGH",  # admin123
+        "hashed_password": "$2b$12$zjxQevmjycKSvZ2L4XkQKO1LiYNETFCEuUq2TI7WbUWBdA.13ok2.",  # admin123
         "disabled": False,
     }
 }

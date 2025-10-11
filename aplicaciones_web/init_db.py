@@ -11,25 +11,28 @@ load_dotenv()
 
 DATABASE_URL = os.getenv("DATABASE_URL")
 
+
 async def init_database():
     """Inicializa los datos básicos en la base de datos"""
     conn = await asyncpg.connect(DATABASE_URL)
-    
+
     try:
         # Verificar si ya existe el esquema banco
-        schema_exists = await conn.fetchval("""
+        schema_exists = await conn.fetchval(
+            """
             SELECT EXISTS(SELECT 1 FROM information_schema.schemata WHERE schema_name = 'banco')
-        """)
-        
+        """
+        )
+
         if not schema_exists:
             # Crear esquema banco
             await conn.execute("CREATE SCHEMA banco;")
             print("✅ Esquema 'banco' creado")
-        
+
         # Crear extensión UUID si no existe
         await conn.execute('CREATE EXTENSION IF NOT EXISTS "uuid-ossp";')
         print("✅ Extensión UUID creada")
-        
+
         # Ejecutar el script SQL para crear las tablas
         sql_script = """
         -- 1) Usuario sistema (UUID fijo)
@@ -147,15 +150,16 @@ async def init_database():
             VALUES ('CORRIENTE','Cuenta corriente')
             ON CONFLICT (nombre) DO NOTHING;
         """
-        
+
         await conn.execute(sql_script)
         print("✅ Tablas creadas exitosamente")
         print("✅ Tipos de cuenta básicos insertados")
-        
+
     except Exception as e:
         print(f"❌ Error: {e}")
     finally:
         await conn.close()
+
 
 if __name__ == "__main__":
     print("🚀 Inicializando base de datos...")
