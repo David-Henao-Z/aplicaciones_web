@@ -24,9 +24,10 @@ En la carpeta raíz del proyecto (donde están `crud.py` y `functions.py`):
 **Windows (PowerShell)**
 
 ```powershell
-python -m venv .venv
+py -m venv .venv
 .\.venv\Scripts\activate
 python -m pip install "fastapi" "uvicorn[standard]" "pydantic[email]"
+pip install -r requirements.txt
 ```
 
 **Linux / macOS**
@@ -45,6 +46,7 @@ Desde la raíz del proyecto:
 
 ```bash
 python -m uvicorn crud:app --reload
+python -m uvicorn aplicaciones_web.apis.crud:app --reload --port 8000
 ```
 
 - Base URL: `http://127.0.0.1:8000`
@@ -175,10 +177,8 @@ curl "http://127.0.0.1:8000/transacciones?cuenta=ACC0001"
 ## Autores / Integrantes
 
 - **HOLOMAN582** — Estudiante / Desarrollador
-- **Integrante 2** — Rol
-- **Integrante 3** — Rol
-
-> Reemplaza los nombres/roles según tu equipo.
+- **David Henao Zea** — Estudiante / Desarrollador
+- **Santiago Ardila Zapata** — Estudiante / Desarrollador
 
 ## 🔮 Mejoras sugeridas
 
