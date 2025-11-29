@@ -31,8 +31,8 @@ Ejecución:
     Desde la carpeta `apis/` con PYTHONPATH configurado:
     
     PowerShell:
-    >>> cd C:\Users\...\aplicaciones_web\aplicaciones_web\apis
-    >>> $env:PYTHONPATH="C:\Users\...\aplicaciones_web"
+    >>> cd C:/Users/.../aplicaciones_web/aplicaciones_web/apis
+    >>> $env:PYTHONPATH="C:/Users/.../aplicaciones_web"
     >>> python -m uvicorn crud:app --reload
     
     El servidor estará disponible en: http://127.0.0.1:8000
