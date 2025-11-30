@@ -60,7 +60,7 @@ License: MIT
 # ============================================================================
 from fastapi import Depends
 from fastapi.security import OAuth2PasswordRequestForm
-from auth import (
+from .auth import (
     authenticate_user,
     create_access_token,
     ACCESS_TOKEN_EXPIRE_MINUTES,
@@ -79,8 +79,8 @@ from fastapi import FastAPI, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from uuid import UUID
-import functions as svc  # Capa de negocio
-from functions import (
+from . import functions as svc  # Capa de negocio
+from .functions import (
     Cliente,
     ClienteCreate,
     Cuenta,
@@ -92,7 +92,7 @@ from functions import (
     Retiro,
     Transferencia,
 )
-from database import close_pool
+from .database import close_pool
 
 
 # ============================================================================
